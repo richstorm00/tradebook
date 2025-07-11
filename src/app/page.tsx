@@ -32,6 +32,13 @@ export default function DashboardPage() {
   const [strategies, setStrategies] = useState<any[]>([]);
   const [strategiesLoading, setStrategiesLoading] = useState(true);
   const [tradeForms, setTradeForms] = useState<{ [key: number]: any }>({});
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [aiBotSubtype, setAiBotSubtype] = useState("Momentum");
+  const [momentumLookback, setMomentumLookback] = useState(10);
+  const [momentumThreshold, setMomentumThreshold] = useState(50);
+  const [capital, setCapital] = useState(1000);
+  const [statusLoading, setStatusLoading] = useState<{ [key: number]: boolean }>({});
+  const [mode, setMode] = useState("paper");
 
   // Fetch strategies from backend
   const fetchStrategies = async () => {
@@ -56,6 +63,11 @@ export default function DashboardPage() {
     setStrategyName("");
     setAiBot("");
     setTags("");
+    setAiBotSubtype("Momentum");
+    setMomentumLookback(10);
+    setMomentumThreshold(50);
+    setCapital(1000);
+    setMode("paper");
   };
 
   // Update handleSubmit to refresh strategies after add
@@ -63,11 +75,18 @@ export default function DashboardPage() {
     e.preventDefault();
     setLoading(true);
     setError("");
-    let payload: any = { type: strategyType, tags };
+    let payload: any = { type: strategyType, tags, mode };
     if (strategyType === "TradingView") {
       payload.name = strategyName;
     } else if (strategyType === "AIBot") {
-      payload.bot = aiBot;
+      payload.bot = aiBotSubtype;
+      payload.capital = capital;
+      if (aiBotSubtype === "Momentum") {
+        payload.momentumConfig = {
+          lookback: momentumLookback,
+          threshold: momentumThreshold,
+        };
+      }
     }
     try {
       const res = await fetch("/api/strategies", {
@@ -104,6 +123,39 @@ export default function DashboardPage() {
     });
     setTradeForms(f => ({ ...f, [strategyId]: {} }));
     await fetchStrategies();
+  };
+
+  const handleDeleteStrategy = async (id: number) => {
+    if (!window.confirm('Are you sure you want to delete this strategy? This will remove all related trades, positions, and KPIs.')) return;
+    setDeletingId(id);
+    try {
+      const res = await fetch(`/api/strategies?id=${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to delete strategy');
+      await fetchStrategies();
+    } catch (err) {
+      alert('Failed to delete strategy');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const handleStartStrategy = async (id: number) => {
+    setStatusLoading(l => ({ ...l, [id]: true }));
+    try {
+      await fetch(`/api/strategies/${id}/start`, { method: 'POST' });
+      await fetchStrategies();
+    } finally {
+      setStatusLoading(l => ({ ...l, [id]: false }));
+    }
+  };
+  const handleStopStrategy = async (id: number) => {
+    setStatusLoading(l => ({ ...l, [id]: true }));
+    try {
+      await fetch(`/api/strategies/${id}/stop`, { method: 'POST' });
+      await fetchStrategies();
+    } finally {
+      setStatusLoading(l => ({ ...l, [id]: false }));
+    }
   };
 
   return (
@@ -177,6 +229,18 @@ export default function DashboardPage() {
                       <option value="AIBot">AIBot</option>
                     </select>
                   </div>
+                  <div>
+                    <Label htmlFor="mode">Mode</Label>
+                    <select
+                      id="mode"
+                      className="mt-1 w-full bg-slate-800 border border-white/10 rounded-md px-3 py-2 text-white"
+                      value={mode}
+                      onChange={e => setMode(e.target.value)}
+                    >
+                      <option value="paper">Paper</option>
+                      <option value="real">Real</option>
+                    </select>
+                  </div>
                   {strategyType === "TradingView" && (
                     <div>
                       <Label htmlFor="strategy-name">Strategy Name</Label>
@@ -184,20 +248,60 @@ export default function DashboardPage() {
                     </div>
                   )}
                   {strategyType === "AIBot" && (
-                    <div>
-                      <Label htmlFor="ai-bot">AI Bot Strategy</Label>
-                      <select
-                        id="ai-bot"
-                        className="mt-1 w-full bg-slate-800 border border-white/10 rounded-md px-3 py-2 text-white"
-                        value={aiBot}
-                        onChange={e => setAiBot(e.target.value)}
-                      >
-                        <option value="">Select a bot...</option>
-                        <option value="MeanReversion">Mean Reversion</option>
-                        <option value="Momentum">Momentum</option>
-                        <option value="Arbitrage">Arbitrage</option>
-                      </select>
-                    </div>
+                    <>
+                      <div>
+                        <Label htmlFor="ai-bot-subtype">AIBot Subtype</Label>
+                        <select
+                          id="ai-bot-subtype"
+                          className="mt-1 w-full bg-slate-800 border border-white/10 rounded-md px-3 py-2 text-white"
+                          value={aiBotSubtype}
+                          onChange={e => setAiBotSubtype(e.target.value)}
+                        >
+                          <option value="Momentum">Momentum</option>
+                          {/* Add more subtypes as needed */}
+                        </select>
+                      </div>
+                      {aiBotSubtype === "Momentum" && (
+                        <>
+                          <div>
+                            <Label htmlFor="momentum-lookback">Lookback Period</Label>
+                            <Input
+                              id="momentum-lookback"
+                              type="number"
+                              min={2}
+                              value={momentumLookback}
+                              onChange={e => setMomentumLookback(Number(e.target.value))}
+                              placeholder="e.g. 10"
+                              className="mt-1"
+                            />
+                          </div>
+                          <div>
+                            <Label htmlFor="momentum-threshold">Threshold</Label>
+                            <Input
+                              id="momentum-threshold"
+                              type="number"
+                              step="any"
+                              value={momentumThreshold}
+                              onChange={e => setMomentumThreshold(Number(e.target.value))}
+                              placeholder="e.g. 50"
+                              className="mt-1"
+                            />
+                          </div>
+                        </>
+                      )}
+                      <div>
+                        <Label htmlFor="capital">Capital Allocation (USD)</Label>
+                        <Input
+                          id="capital"
+                          type="number"
+                          min={1}
+                          value={capital}
+                          onChange={e => setCapital(Number(e.target.value))}
+                          placeholder="e.g. 1000"
+                          className="mt-1"
+                        />
+                      </div>
+                    </>
                   )}
                   <div>
                     <Label htmlFor="tags">Tags</Label>
@@ -222,38 +326,77 @@ export default function DashboardPage() {
             ) : (
               strategies.map((strategy) => (
               <AccordionItem key={strategy.id} value={String(strategy.id)} className="bg-slate-900/60 border border-white/10 rounded-xl">
-                <AccordionTrigger className="flex items-center px-6 py-4 gap-2 w-full">
+                <div className="flex items-center px-6 py-4 gap-2 w-full">
+                  <AccordionTrigger className="flex items-center gap-2 flex-1 min-w-0">
                     <span className="font-semibold text-base truncate">{strategy.name || strategy.bot || "Unnamed Strategy"}</span>
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 flex-1 min-w-0">
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 flex-1 min-w-0">
                       {strategy.webhook && (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span
-                          role="button"
-                          tabIndex={0}
-                          className="ml-2 p-2 rounded hover:bg-slate-800 transition cursor-pointer inline-flex items-center justify-center"
-                          aria-label="Copy Webhook URL"
-                          onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(strategy.webhook); }}
-                          onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); navigator.clipboard.writeText(strategy.webhook); } }}
-                        >
-                          <Copy className="h-4 w-4" />
-                        </span>
-                      </TooltipTrigger>
-                      <TooltipContent side="top">
-                        Copy Webhook URL
-                        <div className="text-xs mt-1 break-all max-w-xs">{strategy.webhook}</div>
-                      </TooltipContent>
-                    </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span
+                              role="button"
+                              tabIndex={0}
+                              className="ml-2 p-2 rounded hover:bg-slate-800 transition cursor-pointer inline-flex items-center justify-center"
+                              aria-label="Copy Webhook URL"
+                              onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(strategy.webhook); }}
+                              onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); navigator.clipboard.writeText(strategy.webhook); } }}
+                            >
+                              <Copy className="h-4 w-4" />
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent side="top">
+                            Copy Webhook URL
+                            <div className="text-xs mt-1 break-all max-w-xs">{strategy.webhook}</div>
+                          </TooltipContent>
+                        </Tooltip>
                       )}
                       <Badge variant="secondary" className="text-xs font-medium bg-slate-800/80 border border-white/10 text-white/80">{strategy.type}</Badge>
+                      <Badge variant="secondary" className="text-xs font-medium bg-slate-800/80 border border-white/10 text-white/80">{strategy.mode === 'real' ? 'Real' : 'Paper'}</Badge>
                       {strategy.tags && <Badge variant="secondary" className="text-xs font-medium bg-slate-800/80 border border-white/10 text-white/80">{strategy.tags}</Badge>}
                       {/* KPIs */}
                       <Badge variant="secondary" className="text-xs font-medium bg-slate-800/80 border border-white/10 text-white/80">PnL: ${strategy.netPnl}</Badge>
                       <Badge variant="secondary" className="text-xs font-medium bg-slate-800/80 border border-white/10 text-white/80">Win Rate: {strategy.winRate}</Badge>
                       <Badge variant="secondary" className="text-xs font-medium bg-slate-800/80 border border-white/10 text-white/80">Trades: {strategy.numTrades}</Badge>
                       <Badge variant="secondary" className="text-xs font-medium bg-slate-800/80 border border-white/10 text-white/80">Max DD: {strategy.maxDrawdown}</Badge>
-                  </div>
-                </AccordionTrigger>
+                    </div>
+                  </AccordionTrigger>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    className="ml-2"
+                    disabled={deletingId === strategy.id}
+                    onClick={e => { e.stopPropagation(); handleDeleteStrategy(strategy.id); }}
+                  >
+                    {deletingId === strategy.id ? 'Deleting...' : 'Delete'}
+                  </Button>
+                  {/* Status badge and Start/Stop buttons */}
+                  <Badge
+                    className={`ml-2 text-xs font-medium ${strategy.status === 'running' ? 'bg-emerald-700' : strategy.status === 'stopped' ? 'bg-slate-700' : 'bg-red-700'}`}
+                  >
+                    {strategy.status === 'running' ? 'Running' : strategy.status === 'stopped' ? 'Stopped' : strategy.status || 'Unknown'}
+                  </Badge>
+                  {strategy.status === 'stopped' ? (
+                    <Button
+                      variant="default"
+                      size="sm"
+                      className="ml-2"
+                      disabled={statusLoading[strategy.id]}
+                      onClick={e => { e.stopPropagation(); handleStartStrategy(strategy.id); }}
+                    >
+                      {statusLoading[strategy.id] ? 'Starting...' : 'Start'}
+                    </Button>
+                  ) : strategy.status === 'running' ? (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="ml-2"
+                      disabled={statusLoading[strategy.id]}
+                      onClick={e => { e.stopPropagation(); handleStopStrategy(strategy.id); }}
+                    >
+                      {statusLoading[strategy.id] ? 'Stopping...' : 'Stop'}
+                    </Button>
+                  ) : null}
+                </div>
                 <AccordionContent className="px-6 pb-4">
                   <div className="space-y-3">
                       {/* Trades Table */}

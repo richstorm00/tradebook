@@ -1,6 +1,33 @@
 const axios = require('axios');
 const crypto = require('crypto');
-const config = require('../config');
+const config = {
+  mode: 'demo', // 'demo' or 'live'
+  api: {
+    demo: {
+      apiKey: 'd7312008a8554691aaff26c78aef1dab',
+      secret: 'af11f5b887c3404e82bd8b44aafac8a9',
+      passphrase: 'wXWooNka4vWNq1',
+    },
+    live: {
+      apiKey: 'YOUR_LIVE_API_KEY',
+      secret: 'YOUR_LIVE_API_SECRET',
+      passphrase: 'YOUR_LIVE_API_PASSPHRASE',
+    },
+  },
+  risk: {
+    perTrade: 0.05, // 5% of available balance per trade
+    trailingStop: 0.04, // 4% trailing stop
+    leverage: 5, // Default leverage
+  },
+  strategy: {
+    minVolume: 100, //100000, // Minimum 24h volume to consider a pair
+    candleInterval: '1h', // Timeframe to scan
+    lookback: 50, // Number of candles to fetch for analysis
+  },
+  polling: {
+    intervalMs: 60 * 1000, // 1 minute between scans
+  },
+};
 
 class BloFinExchange {
   constructor() {
